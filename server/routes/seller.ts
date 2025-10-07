@@ -452,11 +452,12 @@ export const getSellerMessages: RequestHandler = async (req, res) => {
 
         return {
           _id: message._id,
+          buyerId: message.buyerId ? String(message.buyerId) : undefined,
           buyerName: buyer?.name || "Unknown Buyer",
           buyerEmail: buyer?.email || "",
           buyerPhone: buyer?.phone || "",
           message: message.message,
-          propertyId: message.propertyId,
+          propertyId: message.propertyId ? String(message.propertyId) : undefined,
           propertyTitle: property?.title || "Unknown Property",
           propertyPrice: property?.price || 0,
           timestamp: message.createdAt,
@@ -535,11 +536,12 @@ export const getSellerMessages: RequestHandler = async (req, res) => {
 
         return {
           _id: dm._id,
+          buyerId: dm.receiverId ? String(dm.receiverId) : undefined,
           buyerName,
           buyerEmail: dm.receiverEmail || "",
           buyerPhone: dm.receiverPhone || "",
           message: dm.message || dm.content || "",
-          propertyId: dm.propertyId || dm.enquiryPropertyId || null,
+          propertyId: dm.propertyId ? String(dm.propertyId) : (dm.enquiryPropertyId ? String(dm.enquiryPropertyId) : null),
           propertyTitle: dm.propertyTitle || "",
           propertyPrice: dm.propertyPrice || 0,
           timestamp: dm.createdAt,
