@@ -452,11 +452,14 @@ export const getSellerMessages: RequestHandler = async (req, res) => {
 
         return {
           _id: message._id,
+          buyerId: message.buyerId ? String(message.buyerId) : undefined,
           buyerName: buyer?.name || "Unknown Buyer",
           buyerEmail: buyer?.email || "",
           buyerPhone: buyer?.phone || "",
           message: message.message,
-          propertyId: message.propertyId,
+          propertyId: message.propertyId
+            ? String(message.propertyId)
+            : undefined,
           propertyTitle: property?.title || "Unknown Property",
           propertyPrice: property?.price || 0,
           timestamp: message.createdAt,
@@ -469,21 +472,25 @@ export const getSellerMessages: RequestHandler = async (req, res) => {
     // 2) Form-based enquiries from /api/enquiries (map to seller's properties)
     const sellerProps = await db
       .collection("properties")
-      .find({
-        $or: [
-          { ownerId: String(sellerId) },
-          { ownerId: sellerObjId },
-          { sellerId: String(sellerId) },
-          { sellerId: sellerObjId },
-          { userId: String(sellerId) },
-          { userId: sellerObjId },
-        ],
-      }, { projection: { _id: 1, title: 1, price: 1 } })
+      .find(
+        {
+          $or: [
+            { ownerId: String(sellerId) },
+            { ownerId: sellerObjId },
+            { sellerId: String(sellerId) },
+            { sellerId: sellerObjId },
+            { userId: String(sellerId) },
+            { userId: sellerObjId },
+          ],
+        },
+        { projection: { _id: 1, title: 1, price: 1 } },
+      )
       .toArray();
 
     const propMap = new Map<string, { title: string; price: number }>();
     const propIdStrings = sellerProps.map((p: any) => {
-      const idStr = (p._id instanceof ObjectId ? p._id.toString() : String(p._id));
+      const idStr =
+        p._id instanceof ObjectId ? p._id.toString() : String(p._id);
       propMap.set(idStr, { title: p.title || "", price: p.price || 0 });
       return idStr;
     });
@@ -529,17 +536,24 @@ export const getSellerMessages: RequestHandler = async (req, res) => {
         // try to resolve buyer name if possible
         let buyerName = "Buyer";
         if (dm.receiverId) {
-          const u = await db.collection("users").findOne({ _id: dm.receiverId }, { projection: { name: 1 } });
+          const u = await db
+            .collection("users")
+            .findOne({ _id: dm.receiverId }, { projection: { name: 1 } });
           buyerName = u?.name || buyerName;
         } else if (dm.receiverPhone) buyerName = dm.receiverPhone;
 
         return {
           _id: dm._id,
+          buyerId: dm.receiverId ? String(dm.receiverId) : undefined,
           buyerName,
           buyerEmail: dm.receiverEmail || "",
           buyerPhone: dm.receiverPhone || "",
           message: dm.message || dm.content || "",
-          propertyId: dm.propertyId || dm.enquiryPropertyId || null,
+          propertyId: dm.propertyId
+            ? String(dm.propertyId)
+            : dm.enquiryPropertyId
+              ? String(dm.enquiryPropertyId)
+              : null,
           propertyTitle: dm.propertyTitle || "",
           propertyPrice: dm.propertyPrice || 0,
           timestamp: dm.createdAt,
@@ -551,7 +565,9 @@ export const getSellerMessages: RequestHandler = async (req, res) => {
 
     // 4) Merge and sort by time desc
     const combined = [...chatEnhanced, ...enquiryMapped, ...directMapped].sort(
-      (a, b) => new Date(b.timestamp as any).getTime() - new Date(a.timestamp as any).getTime(),
+      (a, b) =>
+        new Date(b.timestamp as any).getTime() -
+        new Date(a.timestamp as any).getTime(),
     );
 
     const response: ApiResponse<any[]> = {
@@ -574,10 +590,13 @@ export const sendSellerMessage: RequestHandler = async (req, res) => {
   try {
     const db = getDatabase();
     const sellerId = (req as any).userId;
-    const { enquiryId, buyerId, buyerPhone, propertyId, message } = req.body || {};
+    const { enquiryId, buyerId, buyerPhone, propertyId, message } =
+      req.body || {};
 
     if (!message || typeof message !== "string" || !message.trim()) {
-      return res.status(400).json({ success: false, error: "Message is required" });
+      return res
+        .status(400)
+        .json({ success: false, error: "Message is required" });
     }
 
     const newMsg: any = {
@@ -598,7 +617,13 @@ export const sendSellerMessage: RequestHandler = async (req, res) => {
     let conversation: any = null;
     if (newMsg.propertyId && newMsg.receiverId) {
       try {
-        conversation = await db.collection('conversations').findOne({ property: new ObjectId(String(newMsg.propertyId)), buyer: newMsg.receiverId, seller: String(newMsg.senderId) });
+        conversation = await db
+          .collection("conversations")
+          .findOne({
+            property: new ObjectId(String(newMsg.propertyId)),
+            buyer: newMsg.receiverId,
+            seller: String(newMsg.senderId),
+          });
         if (!conversation) {
           const convDoc: any = {
             property: new ObjectId(String(newMsg.propertyId)),
@@ -609,11 +634,13 @@ export const sendSellerMessage: RequestHandler = async (req, res) => {
             lastMessageAt: new Date(),
             updatedAt: new Date(),
           };
-          const convRes = await db.collection('conversations').insertOne(convDoc);
+          const convRes = await db
+            .collection("conversations")
+            .insertOne(convDoc);
           conversation = { _id: convRes.insertedId, ...convDoc };
         }
       } catch (e) {
-        console.warn('Could not create/find conversation for reply', e);
+        console.warn("Could not create/find conversation for reply", e);
       }
     }
 
@@ -627,7 +654,12 @@ export const sendSellerMessage: RequestHandler = async (req, res) => {
     // Update conversation lastMessageAt
     if (conversation && conversation._id) {
       try {
-        await db.collection('conversations').updateOne({ _id: new ObjectId(conversation._id) }, { $set: { lastMessageAt: new Date(), updatedAt: new Date() } });
+        await db
+          .collection("conversations")
+          .updateOne(
+            { _id: new ObjectId(conversation._id) },
+            { $set: { lastMessageAt: new Date(), updatedAt: new Date() } },
+          );
       } catch (e) {
         // continue
       }
@@ -636,7 +668,12 @@ export const sendSellerMessage: RequestHandler = async (req, res) => {
     // If it's an enquiry, mark as contacted
     if (enquiryId) {
       try {
-        await db.collection("enquiries").updateOne({ _id: new ObjectId(enquiryId) }, { $set: { status: "contacted", updatedAt: new Date() } });
+        await db
+          .collection("enquiries")
+          .updateOne(
+            { _id: new ObjectId(enquiryId) },
+            { $set: { status: "contacted", updatedAt: new Date() } },
+          );
       } catch (e) {
         // continue
       }
@@ -655,23 +692,44 @@ export const sendSellerMessage: RequestHandler = async (req, res) => {
           enquiryId: newMsg.enquiryId,
           createdAt: newMsg.createdAt,
           conversationId: newMsg.conversationId,
-          source: newMsg.source || 'seller_reply'
+          source: newMsg.source || "seller_reply",
         };
 
         if (conversation) {
-          const messageWithId = { ...payload, _id: result.insertedId, text: payload.message, sender: payload.senderId };
+          const messageWithId = {
+            ...payload,
+            _id: result.insertedId,
+            text: payload.message,
+            sender: payload.senderId,
+          };
           socketServer.emitNewMessage(conversation, messageWithId);
         } else if (newMsg.receiverId) {
-          socketServer.emitToUser(String(newMsg.receiverId), 'notification:new', payload);
+          socketServer.emitToUser(
+            String(newMsg.receiverId),
+            "notification:new",
+            payload,
+          );
         } else if (newMsg.receiverPhone) {
-          socketServer.emitToUser(String(newMsg.receiverPhone), 'notification:new', payload);
+          socketServer.emitToUser(
+            String(newMsg.receiverPhone),
+            "notification:new",
+            payload,
+          );
         }
       }
     } catch (e) {
-      console.error('Error emitting seller reply socket event', e);
+      console.error("Error emitting seller reply socket event", e);
     }
 
-    res.status(201).json({ success: true, data: { messageId: result.insertedId, conversationId: newMsg.conversationId || null } });
+    res
+      .status(201)
+      .json({
+        success: true,
+        data: {
+          messageId: result.insertedId,
+          conversationId: newMsg.conversationId || null,
+        },
+      });
   } catch (error) {
     console.error("Error sending seller message:", error);
     res.status(500).json({ success: false, error: "Failed to send message" });
@@ -1047,25 +1105,36 @@ export const getSellerStats: RequestHandler = async (req, res) => {
 
     // Unread form enquiries (status === "new" for seller's properties)
     const sellerPropIdStrings = properties.map((p: any) =>
-      (p._id instanceof ObjectId ? p._id.toString() : String(p._id))
+      p._id instanceof ObjectId ? p._id.toString() : String(p._id),
     );
     const unreadEnquiries = await db
       .collection("enquiries")
-      .countDocuments({ propertyId: { $in: sellerPropIdStrings }, status: "new" });
+      .countDocuments({
+        propertyId: { $in: sellerPropIdStrings },
+        status: "new",
+      });
 
     const unreadMessages = unreadChat + unreadEnquiries;
 
     // Calculate stats
     const stats = {
       totalProperties: properties.length,
-      pendingApproval: properties.filter((p) => p.approvalStatus === "pending").length,
-      approved: properties.filter((p) => p.approvalStatus === "approved").length,
-      rejected: properties.filter((p) => p.approvalStatus === "rejected").length,
+      pendingApproval: properties.filter((p) => p.approvalStatus === "pending")
+        .length,
+      approved: properties.filter((p) => p.approvalStatus === "approved")
+        .length,
+      rejected: properties.filter((p) => p.approvalStatus === "rejected")
+        .length,
       totalViews: properties.reduce((sum, prop) => sum + (prop.views || 0), 0),
-      totalInquiries: properties.reduce((sum, prop) => sum + (prop.inquiries || 0), 0),
+      totalInquiries: properties.reduce(
+        (sum, prop) => sum + (prop.inquiries || 0),
+        0,
+      ),
       unreadNotifications,
       unreadMessages,
-      premiumListings: properties.filter((p) => (p as any).isPremium || (p as any).premium).length,
+      premiumListings: properties.filter(
+        (p) => (p as any).isPremium || (p as any).premium,
+      ).length,
       profileViews: Math.floor(Math.random() * 500) + 100,
     };
 
@@ -1103,12 +1172,10 @@ export const deleteSellerProperty: RequestHandler = async (req, res) => {
     });
 
     if (result.deletedCount === 0) {
-      return res
-        .status(404)
-        .json({
-          success: false,
-          error: "Property not found or not owned by user",
-        });
+      return res.status(404).json({
+        success: false,
+        error: "Property not found or not owned by user",
+      });
     }
 
     res.json({ success: true, message: "Property deleted" });
@@ -1158,12 +1225,10 @@ export const resubmitSellerProperty: RequestHandler = async (req, res) => {
     );
 
     if (!result.matchedCount) {
-      return res
-        .status(404)
-        .json({
-          success: false,
-          error: "Property not found or not owned by user",
-        });
+      return res.status(404).json({
+        success: false,
+        error: "Property not found or not owned by user",
+      });
     }
 
     res.json({ success: true, message: "Property resubmitted for review" });
