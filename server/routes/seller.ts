@@ -569,30 +569,35 @@ export const getSellerMessages: RequestHandler = async (req, res) => {
       directMsgsRaw.map(async (dm: any) => {
         // try to resolve buyer name if possible
         let buyerName = "Buyer";
-        if (dm.receiverId) {
+        const receiverObjectId =
+          dm.receiverId instanceof ObjectId
+            ? dm.receiverId
+            : ObjectId.isValid(dm.receiverId)
+              ? new ObjectId(String(dm.receiverId))
+              : null;
+        if (receiverObjectId) {
           const u = await db
             .collection("users")
-            .findOne({ _id: dm.receiverId }, { projection: { name: 1 } });
+            .findOne({ _id: receiverObjectId }, { projection: { name: 1 } });
           buyerName = u?.name || buyerName;
         } else if (dm.receiverPhone) buyerName = dm.receiverPhone;
 
+        const propertyIdStr = toIdString(dm.propertyId) ?? toIdString(dm.enquiryPropertyId);
+
         return {
-          _id: dm._id,
-          buyerId: dm.receiverId ? String(dm.receiverId) : undefined,
+          _id: toIdString(dm._id) ?? String(dm._id),
+          buyerId: toIdString(dm.receiverId),
           buyerName,
           buyerEmail: dm.receiverEmail || "",
           buyerPhone: dm.receiverPhone || "",
           message: dm.message || dm.content || "",
-          propertyId: dm.propertyId
-            ? String(dm.propertyId)
-            : dm.enquiryPropertyId
-              ? String(dm.enquiryPropertyId)
-              : null,
+          propertyId: propertyIdStr,
           propertyTitle: dm.propertyTitle || "",
           propertyPrice: dm.propertyPrice || 0,
-          timestamp: dm.createdAt,
+          timestamp: toIsoString(dm.createdAt ?? dm.timestamp),
           isRead: !!dm.isRead,
           source: dm.source || "direct",
+          conversationId: toIdString(dm.conversationId),
         };
       }),
     );
