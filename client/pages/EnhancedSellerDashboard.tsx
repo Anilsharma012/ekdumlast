@@ -74,10 +74,14 @@ interface Notification {
   _id: string;
   title: string;
   message: string;
-  type: "approval" | "rejection" | "account" | "general";
+  type: "approval" | "rejection" | "account" | "general" | string;
   isRead: boolean;
   createdAt: string;
   actionUrl?: string;
+  propertyId?: string | null;
+  propertyTitle?: string;
+  conversationId?: string | null;
+  unreadCount?: number;
 }
 
 interface Message {
@@ -87,11 +91,12 @@ interface Message {
   buyerEmail: string;
   buyerPhone?: string;
   message: string;
-  propertyId?: string;
+  propertyId?: string | null;
   propertyTitle: string;
   timestamp: string;
   isRead: boolean;
   source?: "chat" | "enquiry" | "direct" | string;
+  conversationId?: string | null;
 }
 
 interface PackageT {
