@@ -4,6 +4,26 @@ import { ApiResponse } from "@shared/types";
 import { ObjectId } from "mongodb";
 import bcrypt from "bcrypt";
 
+const toIdString = (value: any): string | undefined => {
+  if (!value) return undefined;
+  if (value instanceof ObjectId) return value.toHexString();
+  if (typeof value === "string") return value;
+  if (typeof value === "object" && typeof value.$oid === "string") {
+    return value.$oid;
+  }
+  if (typeof value?.toString === "function") {
+    const str = value.toString();
+    if (str && str !== "[object Object]") return str;
+  }
+  return undefined;
+};
+
+const toIsoString = (value: any): string => {
+  if (!value) return new Date().toISOString();
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+};
+
 // Get seller's properties
 export const getSellerProperties: RequestHandler = async (req, res) => {
   try {
