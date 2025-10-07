@@ -533,19 +533,22 @@ export const getSellerMessages: RequestHandler = async (req, res) => {
       .toArray();
 
     const enquiryMapped = enquiries.map((e: any) => {
-      const prop = propMap.get(String(e.propertyId)) || { title: "", price: 0 };
+      const propIdStr = toIdString(e.propertyId);
+      const prop = (propIdStr && propMap.get(propIdStr)) || { title: "", price: 0 };
+      const timestamp = e.createdAt || e.timestamp;
       return {
-        _id: e._id,
+        _id: toIdString(e._id) ?? String(e._id),
         buyerName: e.name,
         buyerEmail: "",
         buyerPhone: e.phone,
         message: e.message,
-        propertyId: e.propertyId ? new ObjectId(e.propertyId) : undefined,
+        propertyId: propIdStr,
         propertyTitle: prop.title || "",
         propertyPrice: prop.price || 0,
-        timestamp: e.createdAt || new Date(e.timestamp),
+        timestamp: toIsoString(timestamp),
         isRead: e.status !== "new",
         source: "enquiry",
+        conversationId: toIdString(e.conversationId),
       };
     });
 
