@@ -40,15 +40,16 @@ interface Notification {
 
 interface Message {
   _id: string;
+  buyerId?: string;
   buyerName: string;
   buyerEmail: string;
   buyerPhone?: string;
   message: string;
-  propertyId: string;
+  propertyId?: string;
   propertyTitle: string;
   timestamp: string;
   isRead: boolean;
-  source?: "chat" | "enquiry" | string;
+  source?: "chat" | "enquiry" | "direct" | string;
 }
 
 interface PackageT {
@@ -143,6 +144,7 @@ export default function EnhancedSellerDashboard() {
       }
       const body: any = { message: replyText };
       if (replyTarget.source === 'enquiry') body.enquiryId = replyTarget._id;
+      if (replyTarget.buyerId) body.buyerId = replyTarget.buyerId;
       if (replyTarget.buyerPhone) body.buyerPhone = replyTarget.buyerPhone;
       if (replyTarget.propertyId) body.propertyId = replyTarget.propertyId;
 
