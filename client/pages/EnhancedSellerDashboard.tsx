@@ -74,10 +74,14 @@ interface Notification {
   _id: string;
   title: string;
   message: string;
-  type: "approval" | "rejection" | "account" | "general";
+  type: "approval" | "rejection" | "account" | "general" | string;
   isRead: boolean;
   createdAt: string;
   actionUrl?: string;
+  propertyId?: string | null;
+  propertyTitle?: string;
+  conversationId?: string | null;
+  unreadCount?: number;
 }
 
 interface Message {
@@ -87,11 +91,12 @@ interface Message {
   buyerEmail: string;
   buyerPhone?: string;
   message: string;
-  propertyId?: string;
+  propertyId?: string | null;
   propertyTitle: string;
   timestamp: string;
   isRead: boolean;
   source?: "chat" | "enquiry" | "direct" | string;
+  conversationId?: string | null;
 }
 
 interface PackageT {
@@ -167,7 +172,6 @@ export default function EnhancedSellerDashboard() {
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
   const [replyText, setReplyText] = useState("");
   const openReplyModal = (m: Message) => {
-    console.log("openReplyModal called for", m?._id);
     setReplyTarget(m);
     setReplyText(`Hi ${m.buyerName}, regarding ${m.propertyTitle}.`);
     setReplyModalOpen(true);
@@ -177,6 +181,13 @@ export default function EnhancedSellerDashboard() {
     setReplyTarget(null);
     setReplyText("");
   };
+  const handleReplyButtonClick = (m: Message) => {
+    if (m.conversationId) {
+      navigate(`/conversation/${m.conversationId}`);
+      return;
+    }
+    openReplyModal(m);
+  };
 
   const sendReply = async () => {
     try {
@@ -185,7 +196,12 @@ export default function EnhancedSellerDashboard() {
         toast.error("Session expired or invalid target. Please login again.");
         return;
       }
-      const body: any = { message: replyText };
+      const trimmed = replyText.trim();
+      if (!trimmed) {
+        toast.error("Please enter a reply message before sending.");
+        return;
+      }
+      const body: Record<string, unknown> = { message: trimmed };
       if (replyTarget.source === "enquiry") body.enquiryId = replyTarget._id;
       if (replyTarget.buyerId) body.buyerId = replyTarget.buyerId;
       if (replyTarget.buyerPhone) body.buyerPhone = replyTarget.buyerPhone;
@@ -194,14 +210,21 @@ export default function EnhancedSellerDashboard() {
       const res = await api.post("/seller/messages", body, token);
       if (res?.data?.success) {
         toast.success("Reply sent successfully");
+        const newConversationId = res.data?.data?.conversationId as
+          | string
+          | null
+          | undefined;
         closeReplyModal();
         await fetchDashboardData();
+        if (newConversationId) {
+          navigate(`/conversation/${newConversationId}`);
+        }
       } else {
         toast.error("Failed to send reply");
       }
     } catch (e) {
       console.error("sendReply:", e);
-      alert("Failed to send reply");
+      toast.error("Failed to send reply. Please try again.");
     }
   };
 
@@ -1131,10 +1154,9 @@ export default function EnhancedSellerDashboard() {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => openReplyModal(m)}
-                              onMouseDown={() => openReplyModal(m)}
+                              onClick={() => handleReplyButtonClick(m)}
                             >
-                              Reply
+                              {m.conversationId ? "Open Chat" : "Reply"}
                             </Button>
                           </div>
                         </div>
