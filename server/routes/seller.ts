@@ -213,31 +213,31 @@ export const getSellerNotifications: RequestHandler = async (req, res) => {
     // Add admin notifications
     adminNotifications.forEach((notification) => {
       unifiedNotifications.push({
-        id: notification._id,
+        id: toIdString(notification._id) ?? String(notification._id),
         title: notification.title || "Admin Notification",
         message: notification.message,
         type: notification.type || "admin_notification",
         sender_role: "admin",
         sender_name: "Admin",
         isRead: notification.isRead || false,
-        createdAt: notification.createdAt || notification.sentAt,
+        createdAt: toIsoString(notification.createdAt || notification.sentAt),
         source: "admin_notification",
         priority: notification.priority || "normal",
-        propertyId: notification.propertyId || null,
+        propertyId: toIdString(notification.propertyId) ?? null,
       });
     });
 
     // Add user notifications (sent by admin to specific users)
     userNotifications.forEach((notification) => {
       unifiedNotifications.push({
-        id: notification._id,
+        id: toIdString(notification._id) ?? String(notification._id),
         title: notification.title || "Message from Admin",
         message: notification.message,
         type: notification.type || "admin_message",
         sender_role: "admin",
         sender_name: "Admin",
         isRead: !!notification.readAt,
-        createdAt: notification.sentAt,
+        createdAt: toIsoString(notification.sentAt),
         source: "user_notification",
         priority: "normal",
         propertyId: null,
@@ -251,7 +251,7 @@ export const getSellerNotifications: RequestHandler = async (req, res) => {
         const buyer = conversation.buyerData?.[0];
 
         unifiedNotifications.push({
-          id: conversation._id,
+          id: toIdString(conversation._id) ?? String(conversation._id),
           title: `New message about ${property?.title || "your property"}`,
           message:
             conversation.lastMessage.message ||
@@ -260,12 +260,12 @@ export const getSellerNotifications: RequestHandler = async (req, res) => {
           sender_role: conversation.lastMessage.senderType || "buyer",
           sender_name: buyer?.name || "User",
           isRead: false,
-          createdAt: conversation.lastMessage.createdAt,
+          createdAt: toIsoString(conversation.lastMessage.createdAt),
           source: "conversation",
-          propertyId: property?._id,
+          propertyId: property?._id ? toIdString(property._id) : null,
           propertyTitle: property?.title,
-          conversationId: conversation._id,
-          unreadCount: conversation.unreadCount,
+          conversationId: toIdString(conversation._id),
+          unreadCount: conversation.unreadCount ?? 0,
         });
       }
     });
@@ -273,16 +273,18 @@ export const getSellerNotifications: RequestHandler = async (req, res) => {
     // Add direct messages
     unreadMessages.forEach((message) => {
       unifiedNotifications.push({
-        id: message._id,
+        id: toIdString(message._id) ?? String(message._id),
         title: message.title || "Direct Message",
         message: message.message || message.content,
         type: message.type || "direct_message",
         sender_role: message.senderType || "admin",
         sender_name: message.senderName || "Admin",
         isRead: message.isRead || false,
-        createdAt: message.createdAt,
+        createdAt: toIsoString(message.createdAt),
         source: "direct_message",
         priority: message.priority || "normal",
+        conversationId: toIdString(message.conversationId),
+        propertyId: toIdString(message.propertyId) ?? null,
       });
     });
 
