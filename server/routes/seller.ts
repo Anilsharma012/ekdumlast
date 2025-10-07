@@ -452,39 +452,50 @@ export const getSellerMessages: RequestHandler = async (req, res) => {
 
     const chatEnhanced = await Promise.all(
       chatMsgs.map(async (message) => {
-        const buyer = message.buyerId
+        const buyerObjectId =
+          message.buyerId instanceof ObjectId
+            ? message.buyerId
+            : ObjectId.isValid(message.buyerId)
+              ? new ObjectId(String(message.buyerId))
+              : null;
+        const buyer = buyerObjectId
           ? await db
               .collection("users")
               .findOne(
-                { _id: message.buyerId },
+                { _id: buyerObjectId },
                 { projection: { name: 1, email: 1, phone: 1 } },
               )
           : null;
 
-        const property = message.propertyId
+        const propertyObjectId =
+          message.propertyId instanceof ObjectId
+            ? message.propertyId
+            : ObjectId.isValid(message.propertyId)
+              ? new ObjectId(String(message.propertyId))
+              : null;
+        const property = propertyObjectId
           ? await db
               .collection("properties")
               .findOne(
-                { _id: message.propertyId },
+                { _id: propertyObjectId },
                 { projection: { title: 1, price: 1 } },
               )
           : null;
 
         return {
-          _id: message._id,
-          buyerId: message.buyerId ? String(message.buyerId) : undefined,
+          _id: toIdString(message._id) ?? String(message._id),
+          buyerId: toIdString(message.buyerId),
           buyerName: buyer?.name || "Unknown Buyer",
           buyerEmail: buyer?.email || "",
           buyerPhone: buyer?.phone || "",
           message: message.message,
-          propertyId: message.propertyId
-            ? String(message.propertyId)
-            : undefined,
+          propertyId: toIdString(message.propertyId),
           propertyTitle: property?.title || "Unknown Property",
           propertyPrice: property?.price || 0,
-          timestamp: message.createdAt,
+          timestamp: toIsoString(message.createdAt ?? message.timestamp),
           isRead: !!message.isRead,
           source: "chat",
+          conversationId: toIdString(message.conversationId),
         };
       }),
     );
