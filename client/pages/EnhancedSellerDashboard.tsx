@@ -1154,10 +1154,9 @@ export default function EnhancedSellerDashboard() {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => openReplyModal(m)}
-                              onMouseDown={() => openReplyModal(m)}
+                              onClick={() => handleReplyButtonClick(m)}
                             >
-                              Reply
+                              {m.conversationId ? "Open Chat" : "Reply"}
                             </Button>
                           </div>
                         </div>
