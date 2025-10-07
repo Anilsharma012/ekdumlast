@@ -196,7 +196,12 @@ export default function EnhancedSellerDashboard() {
         toast.error("Session expired or invalid target. Please login again.");
         return;
       }
-      const body: any = { message: replyText };
+      const trimmed = replyText.trim();
+      if (!trimmed) {
+        toast.error("Please enter a reply message before sending.");
+        return;
+      }
+      const body: Record<string, unknown> = { message: trimmed };
       if (replyTarget.source === "enquiry") body.enquiryId = replyTarget._id;
       if (replyTarget.buyerId) body.buyerId = replyTarget.buyerId;
       if (replyTarget.buyerPhone) body.buyerPhone = replyTarget.buyerPhone;
@@ -205,14 +210,21 @@ export default function EnhancedSellerDashboard() {
       const res = await api.post("/seller/messages", body, token);
       if (res?.data?.success) {
         toast.success("Reply sent successfully");
+        const newConversationId = res.data?.data?.conversationId as
+          | string
+          | null
+          | undefined;
         closeReplyModal();
         await fetchDashboardData();
+        if (newConversationId) {
+          navigate(`/conversation/${newConversationId}`);
+        }
       } else {
         toast.error("Failed to send reply");
       }
     } catch (e) {
       console.error("sendReply:", e);
-      alert("Failed to send reply");
+      toast.error("Failed to send reply. Please try again.");
     }
   };
 
