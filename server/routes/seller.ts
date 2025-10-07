@@ -21,7 +21,9 @@ const toIdString = (value: any): string | undefined => {
 const toIsoString = (value: any): string => {
   if (!value) return new Date().toISOString();
   const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+  return Number.isNaN(date.getTime())
+    ? new Date().toISOString()
+    : date.toISOString();
 };
 
 // Get seller's properties
@@ -536,7 +538,10 @@ export const getSellerMessages: RequestHandler = async (req, res) => {
 
     const enquiryMapped = enquiries.map((e: any) => {
       const propIdStr = toIdString(e.propertyId);
-      const prop = (propIdStr && propMap.get(propIdStr)) || { title: "", price: 0 };
+      const prop = (propIdStr && propMap.get(propIdStr)) || {
+        title: "",
+        price: 0,
+      };
       const timestamp = e.createdAt || e.timestamp;
       return {
         _id: toIdString(e._id) ?? String(e._id),
@@ -584,7 +589,8 @@ export const getSellerMessages: RequestHandler = async (req, res) => {
           buyerName = u?.name || buyerName;
         } else if (dm.receiverPhone) buyerName = dm.receiverPhone;
 
-        const propertyIdStr = toIdString(dm.propertyId) ?? toIdString(dm.enquiryPropertyId);
+        const propertyIdStr =
+          toIdString(dm.propertyId) ?? toIdString(dm.enquiryPropertyId);
 
         return {
           _id: toIdString(dm._id) ?? String(dm._id),
@@ -632,14 +638,14 @@ export const sendSellerMessage: RequestHandler = async (req, res) => {
     const db = getDatabase();
     const sellerId = (req as any).userId;
     const sellerIdStr = sellerId ? String(sellerId) : "";
-    const { enquiryId, buyerId, buyerPhone, propertyId, message } =
-      (req.body || {}) as {
-        enquiryId?: any;
-        buyerId?: any;
-        buyerPhone?: any;
-        propertyId?: any;
-        message?: string;
-      };
+    const { enquiryId, buyerId, buyerPhone, propertyId, message } = (req.body ||
+      {}) as {
+      enquiryId?: any;
+      buyerId?: any;
+      buyerPhone?: any;
+      propertyId?: any;
+      message?: string;
+    };
 
     const trimmedMessage = typeof message === "string" ? message.trim() : "";
 
@@ -694,9 +700,7 @@ export const sendSellerMessage: RequestHandler = async (req, res) => {
             propertyId: normalizedPropertyId,
             buyer: normalizedBuyerId,
             seller: sellerIdStr,
-            participants: Array.from(
-              new Set([normalizedBuyerId, sellerIdStr]),
-            ),
+            participants: Array.from(new Set([normalizedBuyerId, sellerIdStr])),
             createdAt: new Date(),
             updatedAt: new Date(),
             lastMessageAt: new Date(),
@@ -736,10 +740,12 @@ export const sendSellerMessage: RequestHandler = async (req, res) => {
 
     if (enquiryObjectId) {
       try {
-        await db.collection("enquiries").updateOne(
-          { _id: enquiryObjectId },
-          { $set: { status: "contacted", updatedAt: new Date() } },
-        );
+        await db
+          .collection("enquiries")
+          .updateOne(
+            { _id: enquiryObjectId },
+            { $set: { status: "contacted", updatedAt: new Date() } },
+          );
       } catch (e) {
         // continue
       }
@@ -756,9 +762,10 @@ export const sendSellerMessage: RequestHandler = async (req, res) => {
           propertyId: normalizedPropertyId,
           enquiryId: normalizedEnquiryId,
           createdAt: newMsg.createdAt,
-          conversationId: conversation && conversation._id
-            ? conversation._id.toString()
-            : undefined,
+          conversationId:
+            conversation && conversation._id
+              ? conversation._id.toString()
+              : undefined,
           source: newMsg.source || "seller_reply",
         };
 
@@ -771,7 +778,11 @@ export const sendSellerMessage: RequestHandler = async (req, res) => {
           };
           socketServer.emitNewMessage(conversation, messageWithId);
         } else if (normalizedBuyerId) {
-          socketServer.emitToUser(normalizedBuyerId, "notification:new", payload);
+          socketServer.emitToUser(
+            normalizedBuyerId,
+            "notification:new",
+            payload,
+          );
         } else if (normalizedBuyerPhone) {
           socketServer.emitToUser(
             normalizedBuyerPhone,
@@ -792,9 +803,7 @@ export const sendSellerMessage: RequestHandler = async (req, res) => {
             ? result.insertedId.toString()
             : String(result.insertedId),
         conversationId:
-          conversation && conversation._id
-            ? conversation._id.toString()
-            : null,
+          conversation && conversation._id ? conversation._id.toString() : null,
       },
     });
   } catch (error) {
@@ -1174,12 +1183,10 @@ export const getSellerStats: RequestHandler = async (req, res) => {
     const sellerPropIdStrings = properties.map((p: any) =>
       p._id instanceof ObjectId ? p._id.toString() : String(p._id),
     );
-    const unreadEnquiries = await db
-      .collection("enquiries")
-      .countDocuments({
-        propertyId: { $in: sellerPropIdStrings },
-        status: "new",
-      });
+    const unreadEnquiries = await db.collection("enquiries").countDocuments({
+      propertyId: { $in: sellerPropIdStrings },
+      status: "new",
+    });
 
     const unreadMessages = unreadChat + unreadEnquiries;
 
