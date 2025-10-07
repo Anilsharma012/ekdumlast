@@ -1,8 +1,9 @@
 // client/lib/firebase.ts
 // -------------------------------------------------------
 // Firebase init + Google & Phone auth helpers (TS + Vite)
-// Dev safe logs, Firestore long-polling fix, SSR guards
-// Recaptcha: invisible + auto-created hidden container
+// - Uses reCAPTCHA v2 (invisible) — NO Enterprise
+// - Dev-only test bypass on localhost
+// - Firestore long-polling for local proxies
 // -------------------------------------------------------
 
 import { initializeApp, type FirebaseApp } from "firebase/app";
@@ -28,37 +29,22 @@ import {
 
 // ---- ENV (support both VITE_FIREBASE_* and VITE_FB_*)
 const envCfg = {
-  apiKey:
-    import.meta.env.VITE_FIREBASE_API_KEY ??
-    import.meta.env.VITE_FB_API_KEY ??
-    "",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY ?? import.meta.env.VITE_FB_API_KEY ?? "",
   authDomain:
-    import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ??
-    import.meta.env.VITE_FB_AUTH_DOMAIN ??
-    "",
+    import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ?? import.meta.env.VITE_FB_AUTH_DOMAIN ?? "",
   projectId:
-    import.meta.env.VITE_FIREBASE_PROJECT_ID ??
-    import.meta.env.VITE_FB_PROJECT_ID ??
-    "",
+    import.meta.env.VITE_FIREBASE_PROJECT_ID ?? import.meta.env.VITE_FB_PROJECT_ID ?? "",
   storageBucket:
-    import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ??
-    import.meta.env.VITE_FB_STORAGE_BUCKET ??
-    "",
+    import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ?? import.meta.env.VITE_FB_STORAGE_BUCKET ?? "",
   messagingSenderId:
     import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID ??
     import.meta.env.VITE_FB_MESSAGING_SENDER_ID ??
     "",
-  appId:
-    import.meta.env.VITE_FIREBASE_APP_ID ??
-    import.meta.env.VITE_FB_APP_ID ??
-    "",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID ?? import.meta.env.VITE_FB_APP_ID ?? "",
   measurementId:
-    import.meta.env.VITE_FIREBASE_MEASUREMENT_ID ??
-    import.meta.env.VITE_FB_MEASUREMENT_ID ??
-    "",
+    import.meta.env.VITE_FIREBASE_MEASUREMENT_ID ?? import.meta.env.VITE_FB_MEASUREMENT_ID ?? "",
 };
 
-// quick sanity
 const requiredOk =
   !!envCfg.apiKey && !!envCfg.authDomain && !!envCfg.projectId && !!envCfg.appId;
 export const isFirebaseConfigured = requiredOk;
@@ -88,6 +74,17 @@ if (requiredOk) {
   });
 
   authInstance = getAuth(app);
+
+  // --- Dev-only: test numbers bypass on localhost (NEVER in prod)
+  if (typeof window !== "undefined") {
+    const isLocal =
+      location.hostname === "localhost" || location.hostname === "127.0.0.1";
+    if (isLocal) {
+      // @ts-ignore
+      authInstance.settings.appVerificationDisabledForTesting = true;
+      console.log("[FB][DEV] appVerificationDisabledForTesting = true");
+    }
+  }
 
   // Firestore: long-polling → fixes 400 Listen in dev/proxies
   dbInstance = initializeFirestore(app, {
@@ -161,7 +158,7 @@ export const signInWithGoogle = async (): Promise<{
       if (red?.user) {
         const u = red.user;
         const idToken = await u.getIdToken(true);
-        console.log("[FB][Google] Redirect sign-in OK]:", {
+        console.log("[FB][Google] Redirect sign-in OK:", {
           uid: u.uid,
           email: u.email,
         });
@@ -216,8 +213,7 @@ export const signInWithGoogle = async (): Promise<{
         message = "Domain not authorized in Firebase Authentication settings.";
         break;
       case "auth/network-request-failed":
-        message =
-          "Network error. Add your dev/preview domain to Authorized domains.";
+        message = "Network error. Add your dev/preview domain to Authorized domains.";
         break;
       default:
         message = e?.message || message;
@@ -227,12 +223,17 @@ export const signInWithGoogle = async (): Promise<{
   }
 };
 
-// ---- Phone OTP (INVISIBLE reCAPTCHA, no UI needed)
+// ---- Phone OTP (INVISIBLE reCAPTCHA v2)
 export class PhoneAuthService {
   private recaptcha: RecaptchaVerifier | null = null;
   private confirmation: ConfirmationResult | null = null;
 
+  private isBrowser(): boolean {
+    return typeof window !== "undefined" && typeof document !== "undefined";
+  }
+
   private ensureHiddenContainer(): HTMLElement {
+    if (!this.isBrowser()) throw new Error("OTP is only available in browser");
     let el = document.getElementById("fb-recaptcha");
     if (!el) {
       el = document.createElement("div");
@@ -251,14 +252,14 @@ export class PhoneAuthService {
     if (this.recaptcha) return this.recaptcha;
 
     const el = this.ensureHiddenContainer();
-    // Modular API signature: new RecaptchaVerifier(auth, containerOrId, params)
+    // Modular API: new RecaptchaVerifier(auth, containerOrId, params)
     this.recaptcha = new RecaptchaVerifier(auth, el, { size: "invisible" });
     return this.recaptcha;
   }
 
   private toE164(raw: string) {
-    const digits = raw.replace(/\D/g, "");
-    return raw.startsWith("+") ? raw : `+91${digits}`;
+    const digits = (raw || "").replace(/\D/g, "");
+    return raw?.startsWith("+") ? raw : `+91${digits}`;
   }
 
   async sendOTP(rawPhone: string): Promise<void> {
@@ -269,32 +270,56 @@ export class PhoneAuthService {
       console.log("[FB][OTP] Sending to:", phone);
       this.confirmation = await signInWithPhoneNumber(auth, phone, appVerifier);
       console.log("[FB][OTP] OTP sent");
-    } catch (e) {
-      console.error("[FB][OTP] Send failed:", e);
-      try { this.recaptcha?.clear(); } catch {}
+    } catch (err: any) {
+      // clear and allow next attempt to recreate verifier
+      try {
+        this.recaptcha?.clear();
+      } catch {}
       this.recaptcha = null;
-      throw e;
+
+      // Friendlier messages
+      const code = err?.code || "";
+      if (code === "auth/billing-not-enabled") {
+        console.error("[FB][OTP][SEND] billing-not-enabled → ensure NO App Check Enterprise & Auth reCAPTCHA Enterprise is OFF.");
+        throw new Error(
+          "Billing not enabled for reCAPTCHA Enterprise. Turn OFF Enterprise (use v2) or enable billing."
+        );
+      }
+      if (code === "auth/too-many-requests") {
+        throw new Error("Too many attempts. Please wait a minute and try again.");
+      }
+      if (code === "auth/invalid-phone-number") {
+        throw new Error("Invalid phone number. Use format +91XXXXXXXXXX.");
+      }
+      console.error("[FB][OTP][SEND]", code, err?.message || err);
+      throw err;
     }
   }
 
-  async verifyOTP(code: string): Promise<{
-    firebaseUser: FirebaseUser;
-    idToken: string;
-  }> {
+  async verifyOTP(code: string): Promise<{ firebaseUser: FirebaseUser; idToken: string }> {
     if (!this.confirmation) throw new Error("OTP not sent yet");
     try {
       const cred = await this.confirmation.confirm(code);
       const idToken = await cred.user.getIdToken(true);
       console.log("[FB][OTP] Verified");
       return { firebaseUser: cred.user, idToken };
-    } catch (e) {
-      console.error("[FB][OTP] Verify failed:", e);
-      throw e;
+    } catch (err: any) {
+      const code = err?.code || "";
+      if (code === "auth/invalid-verification-code") {
+        throw new Error("Invalid code. Please check and try again.");
+      }
+      if (code === "auth/code-expired") {
+        throw new Error("Code expired. Please request a new OTP.");
+      }
+      console.error("[FB][OTP][VERIFY]", code, err?.message || err);
+      throw err;
     }
   }
 
   reset(): void {
-    try { this.recaptcha?.clear(); } catch {}
+    try {
+      this.recaptcha?.clear();
+    } catch {}
     this.recaptcha = null;
     this.confirmation = null;
   }

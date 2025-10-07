@@ -1,6 +1,10 @@
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { signInWithGoogle, isFirebaseConfigured, phoneAuth } from "@/lib/firebase";
+import {
+  signInWithGoogle,
+  isFirebaseConfigured,
+  phoneAuth, // <- uses Recaptcha v2 invisible internally
+} from "@/lib/firebase";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/button";
@@ -37,10 +41,11 @@ import UnifiedLoginNotice from "../components/UnifiedLoginNotice";
 const ComprehensiveAuth = () => {
   const navigate = useNavigate();
   const { login, isAuthenticated, user } = useAuth();
+
   const [activeTab, setActiveTab] = useState("login");
   const [authMode, setAuthMode] = useState<"password" | "otp" | "google">("password");
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false);     // global button guard
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [otpSent, setOtpSent] = useState(false);
@@ -67,15 +72,36 @@ const ComprehensiveAuth = () => {
     otp: "",
   });
 
+  // Clean up reCAPTCHA/confirmation when switching away from OTP mode or unmount
+  useEffect(() => {
+    return () => {
+      try {
+        phoneAuth.reset();
+      } catch {}
+    };
+  }, []);
+  useEffect(() => {
+    if (authMode !== "otp") {
+      try {
+        phoneAuth.reset();
+      } catch {}
+      setOtpSent(false);
+      setOtpTimer(0);
+      setFormData((s) => ({ ...s, otp: "" }));
+    }
+  }, [authMode]);
+
   // OTP Timer
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: NodeJS.Timeout | undefined;
     if (otpTimer > 0) {
       interval = setInterval(() => {
         setOtpTimer((time) => time - 1);
       }, 1000);
     }
-    return () => clearInterval(interval);
+    return () => {
+      if (interval) clearInterval(interval);
+    };
   }, [otpTimer]);
 
   const handleInputChange = (
@@ -89,10 +115,11 @@ const ComprehensiveAuth = () => {
     setSuccess("");
   };
 
-  // Password Login/Register
+  // ----------------------------
+  // Password Login / Registration
+  // ----------------------------
   const handlePasswordAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-
     if (loading) return;
 
     setLoading(true);
@@ -108,7 +135,7 @@ const ComprehensiveAuth = () => {
         if (!formData.name?.trim()) throw new Error("Name is required");
         if (!formData.email?.trim() || !emailRe.test(formData.email))
           throw new Error("Enter a valid email address");
-        if (!formData.phone?.trim() || formData.phone.trim().length < 10)
+        if (!formData.phone?.trim() || formData.phone.trim().replace(/\D/g, "").length < 10)
           throw new Error("Enter a valid 10-digit phone number");
         if (!formData.password || formData.password.length < 6)
           throw new Error("Password must be at least 6 characters");
@@ -142,7 +169,7 @@ const ComprehensiveAuth = () => {
           setTimeout(() => {
             login(token, user);
             redirectToCorrectDashboard(user.userType);
-          }, 1200);
+          }, 900);
         } else {
           login(token, user);
           redirectToCorrectDashboard(user.userType);
@@ -160,14 +187,16 @@ const ComprehensiveAuth = () => {
 
       if (
         error.name === "TypeError" &&
-        error.message.includes("Failed to fetch")
+        error.message?.includes("Failed to fetch")
       ) {
         errorMessage =
           "Network error. Please check your internet connection and try again.";
-      } else if (error.message.includes("body stream already read")) {
+      } else if (error.message?.includes("body stream already read")) {
         errorMessage = "Request processing error. Please try again.";
       } else if (!errorMessage) {
-        errorMessage = `${activeTab === "login" ? "Login" : "Registration"} failed. Please try again.`;
+        errorMessage = `${
+          activeTab === "login" ? "Login" : "Registration"
+        } failed. Please try again.`;
       }
 
       setError(errorMessage);
@@ -182,8 +211,13 @@ const ComprehensiveAuth = () => {
 
   // Send OTP via Firebase (client-side)
   const handleSendOTP = async () => {
-    if (!formData.phone) {
+    if (loading) return;
+    if (!formData.phone?.trim()) {
       setError("Please enter your phone number");
+      return;
+    }
+    if (!isFirebaseConfigured) {
+      setError("Phone OTP is unavailable: Firebase is not configured.");
       return;
     }
 
@@ -198,7 +232,19 @@ const ComprehensiveAuth = () => {
       setSuccess("OTP sent! Check your phone.");
     } catch (e: any) {
       console.error("OTP send error:", e);
-      setError(e?.message || "Failed to send OTP");
+      // Friendly mapping
+      const code = e?.code || "";
+      if (code === "auth/billing-not-enabled") {
+        setError(
+          "Billing not enabled for reCAPTCHA Enterprise. Turn OFF Enterprise (use v2) or enable billing."
+        );
+      } else if (code === "auth/too-many-requests") {
+        setError("Too many attempts. Please wait a minute and try again.");
+      } else if (code === "auth/invalid-phone-number") {
+        setError("Invalid phone number. Use format +91XXXXXXXXXX.");
+      } else {
+        setError(e?.message || "Failed to send OTP");
+      }
     } finally {
       setLoading(false);
     }
@@ -207,8 +253,14 @@ const ComprehensiveAuth = () => {
   // Verify OTP -> get Firebase ID token -> backend session
   const handleOTPSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
+
     if (!formData.otp || formData.otp.length < 6) {
       setError("Enter the 6-digit OTP");
+      return;
+    }
+    if (!isFirebaseConfigured) {
+      setError("Phone OTP is unavailable: Firebase is not configured.");
       return;
     }
 
@@ -238,7 +290,14 @@ const ComprehensiveAuth = () => {
       redirectToCorrectDashboard(u.userType);
     } catch (err: any) {
       console.error("OTP verification error:", err);
-      setError(err?.message || "OTP verification failed");
+      const code = err?.code || "";
+      if (code === "auth/invalid-verification-code") {
+        setError("Invalid code. Please check and try again.");
+      } else if (code === "auth/code-expired") {
+        setError("Code expired. Please request a new OTP.");
+      } else {
+        setError(err?.message || "OTP verification failed");
+      }
     } finally {
       setLoading(false);
     }
@@ -289,10 +348,14 @@ const ComprehensiveAuth = () => {
       buyer: "/buyer-dashboard",
       agent: "/agent-dashboard",
     };
-
     const targetRoute = routes[userType as keyof typeof routes] || "/";
     navigate(targetRoute);
   };
+
+  // Utility: mask phone for display when OTP sent
+  const maskedPhone = formData.phone
+    ? formData.phone.replace(/(\d{2})\d{6}(\d{2})/, "$1******$2")
+    : "";
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50">
@@ -369,11 +432,7 @@ const ComprehensiveAuth = () => {
               <UnifiedLoginNotice className="mb-4" />
 
               {/* Tab Selection */}
-              <Tabs
-                value={activeTab}
-                onValueChange={setActiveTab}
-                className="mb-6"
-              >
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
                 <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="login" className="font-medium">
                     Sign In
@@ -509,10 +568,10 @@ const ComprehensiveAuth = () => {
                     {success !== ""
                       ? "Success! Redirecting..."
                       : loading
-                        ? "Please wait..."
-                        : activeTab === "login"
-                          ? "Sign In"
-                          : "Create Account"}
+                      ? "Please wait..."
+                      : activeTab === "login"
+                      ? "Sign In"
+                      : "Create Account"}
                   </Button>
                 </form>
               )}
@@ -568,7 +627,7 @@ const ComprehensiveAuth = () => {
                           />
                         </div>
                         <p className="text-xs text-gray-500 mt-1">
-                          OTP sent to {formData.phone}
+                          OTP sent to {maskedPhone || formData.phone}
                         </p>
                       </div>
 
@@ -586,6 +645,7 @@ const ComprehensiveAuth = () => {
                           onClick={() => {
                             setOtpSent(false);
                             setFormData({ ...formData, otp: "" });
+                            try { phoneAuth.reset(); } catch {}
                           }}
                           className="text-sm text-gray-500 hover:text-gray-700 flex items-center"
                         >
