@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ashish Properties - Buy & Sell Properties</title>
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#C70000" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Ashish Properties" />
+
+    <!-- Description -->
+    <meta
+      name="description"
+      content="Find and sell properties easily in Rohtak and nearby areas. Buy & Sell better with ASHISH PROPERTIES app."
+    />
+
+    <!-- Favicon -->
+    <!-- <link rel="icon" href="/favicon.ico" type="image/x-icon" /> -->
+
+    <!-- Apple Touch Icons -->
+    <!-- <link rel="apple-touch-icon" href="/favicon.ico" /> -->
+
+    <!-- OG Tags -->
+    <meta
+      property="og:title"
+      content="Ashish Properties - Buy & Sell Properties"
+    />
+    <meta
+      property="og:description"
+      content="Find and sell properties easily in Rohtak and nearby areas."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://aashishproperty.com" />
+    <meta property="og:image" content="/favicon.ico" />
+  </head>
+
+  <body>
+    <div id="root"></div>
+
+    <script type="module" src="/client/main.tsx"></script>
+
+    <!-- Service Worker Registration -->
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker
+            .register("/sw.js")
+            .then((registration) => {
+              console.log("SW registered: ", registration);
+            })
+            .catch((registrationError) => {
+              console.log("SW registration failed: ", registrationError);
+            });
+        });
+      }
+    </script>
+  </body>
+</html>
